@@ -1,0 +1,15 @@
+# IoT Gas Monitoring System - Dependencies
+
+# Backend - FastAPI
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+
+# MQTT Integration
+fastapi-mqtt==2.1.0
+paho-mqtt==1.6.1
+
+# Database - Supabase
+supabase>=2.0.0,<3.0.0
+
+# Utilities
+python-dotenv==1.0.0

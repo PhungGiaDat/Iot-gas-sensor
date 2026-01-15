@@ -1,0 +1,26 @@
+# Render.com deployment configuration
+# https://render.com/docs/deploy-a-dockerized-application
+
+services:
+  - type: web
+    name: iot-gas-monitor
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    envVars:
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_KEY
+        sync: false
+      - key: MQTT_HOST
+        sync: false
+      - key: MQTT_PORT
+        value: "8883"
+      - key: MQTT_USER
+        sync: false
+      - key: MQTT_PASS
+        sync: false
+      - key: MQTT_TOPIC
+        value: "iot/sensor/gas"
+    healthCheckPath: /status
+    autoDeploy: true

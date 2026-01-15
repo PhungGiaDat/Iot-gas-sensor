@@ -1,0 +1,976 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IoT Gas Monitor | Real-Time Dashboard</title>
+
+    <!-- SEO Meta Tags -->
+    <meta name="description"
+        content="Real-time IoT gas concentration monitoring dashboard with alerts and data visualization">
+    <meta name="keywords" content="IoT, Gas Monitor, MQTT, Real-time, Dashboard">
+
+    <!-- Google Fonts -->
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+        rel="stylesheet">
+
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.2/font/bootstrap-icons.css" rel="stylesheet">
+
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
+    <style>
+        /* =================================================================
+           Custom CSS Variables & Overrides
+           ================================================================= */
+        :root {
+            --bs-body-bg: #0a0a0f;
+            --bs-body-color: #ffffff;
+            --bs-card-bg: rgba(26, 26, 46, 0.9);
+            --accent-cyan: #00d4ff;
+            --accent-cyan-glow: rgba(0, 212, 255, 0.3);
+            --danger-glow: rgba(255, 71, 87, 0.4);
+            --font-mono: 'JetBrains Mono', 'Consolas', monospace;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: linear-gradient(135deg, #0a0a0f 0%, #1a1a2e 50%, #0a0a0f 100%);
+            min-height: 100vh;
+        }
+
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background:
+                radial-gradient(ellipse at 20% 20%, rgba(0, 212, 255, 0.08) 0%, transparent 50%),
+                radial-gradient(ellipse at 80% 80%, rgba(138, 43, 226, 0.06) 0%, transparent 50%);
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        /* =================================================================
+           Alert State (Flash Red)
+           ================================================================= */
+        body.alert-active {
+            animation: alertPulse 0.8s ease-in-out infinite;
+        }
+
+        @keyframes alertPulse {
+
+            0%,
+            100% {
+                background: linear-gradient(135deg, #0a0a0f 0%, #1a1a2e 50%, #0a0a0f 100%);
+            }
+
+            50% {
+                background: linear-gradient(135deg, #2a0a0a 0%, #4d1515 50%, #2a0a0a 100%);
+            }
+        }
+
+        /* =================================================================
+           Card Styling
+           ================================================================= */
+        .card {
+            background: var(--bs-card-bg);
+            border: 1px solid rgba(0, 212, 255, 0.15);
+            backdrop-filter: blur(10px);
+            transition: all 0.3s ease;
+        }
+
+        .card:hover {
+            border-color: rgba(0, 212, 255, 0.3);
+            box-shadow: 0 8px 32px rgba(0, 212, 255, 0.1);
+        }
+
+        /* =================================================================
+           Value Display
+           ================================================================= */
+        .value-display {
+            font-family: var(--font-mono);
+            font-size: 5rem;
+            font-weight: 700;
+            line-height: 1;
+            transition: all 0.3s ease;
+        }
+
+        .value-display.text-success {
+            color: #2ed573 !important;
+            text-shadow: 0 0 30px rgba(46, 213, 115, 0.4);
+        }
+
+        .value-display.text-danger {
+            color: #ff4757 !important;
+            text-shadow: 0 0 30px var(--danger-glow);
+            animation: dangerBlink 0.5s ease-in-out infinite;
+        }
+
+        @keyframes dangerBlink {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.7;
+            }
+        }
+
+        /* =================================================================
+           Status Indicator
+           ================================================================= */
+        .status-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+
+        .status-dot.connected {
+            background: #2ed573;
+            box-shadow: 0 0 10px #2ed573;
+            animation: pulse 2s infinite;
+        }
+
+        .status-dot.disconnected {
+            background: #ff4757;
+        }
+
+        .status-dot.connecting {
+            background: #ffa502;
+            animation: blink 1s infinite;
+        }
+
+        @keyframes pulse {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.6;
+            }
+        }
+
+        @keyframes blink {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.3;
+            }
+        }
+
+        /* =================================================================
+           Chart Container
+           ================================================================= */
+        .chart-container {
+            position: relative;
+            height: 350px;
+        }
+
+        /* =================================================================
+           Alert Banner
+           ================================================================= */
+        .alert-banner {
+            animation: alertBlink 0.5s ease-in-out infinite;
+        }
+
+        @keyframes alertBlink {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.7;
+            }
+        }
+
+        /* =================================================================
+           Stats Card
+           ================================================================= */
+        .stat-card {
+            background: rgba(0, 212, 255, 0.05);
+            border-radius: 12px;
+            padding: 1rem;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-family: var(--font-mono);
+            font-size: 1.5rem;
+            font-weight: 600;
+        }
+
+        /* =================================================================
+           Scrollable Alert Table
+           ================================================================= */
+        .alert-table-container {
+            max-height: 250px;
+            overflow-y: auto;
+        }
+
+        .alert-table-container::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .alert-table-container::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .alert-table-container::-webkit-scrollbar-thumb {
+            background: rgba(0, 212, 255, 0.3);
+            border-radius: 3px;
+        }
+
+        /* =================================================================
+           Gradient Text
+           ================================================================= */
+        .gradient-text {
+            background: linear-gradient(135deg, var(--accent-cyan), #a78bfa);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        /* =================================================================
+           Custom Table
+           ================================================================= */
+        .table-dark-custom {
+            --bs-table-bg: transparent;
+            --bs-table-border-color: rgba(255, 255, 255, 0.1);
+        }
+
+        .table-dark-custom th {
+            color: #8b8b9e;
+            font-weight: 500;
+            text-transform: uppercase;
+            font-size: 0.75rem;
+            letter-spacing: 0.5px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container py-4 position-relative" style="z-index: 1;">
+        <!-- Header -->
+        <header class="text-center mb-4">
+            <h1 class="display-5 fw-bold gradient-text">
+                <i class="bi bi-thermometer-half me-2"></i>IoT Gas Monitor
+            </h1>
+            <p class="text-secondary">Real-time Gas Concentration Dashboard</p>
+        </header>
+
+        <!-- Status Bar -->
+        <div class="d-flex justify-content-center flex-wrap gap-4 mb-4">
+            <div class="d-flex align-items-center gap-2">
+                <span class="status-dot connecting" id="wsStatusDot"></span>
+                <span class="text-secondary small" id="wsStatusText">Connecting...</span>
+            </div>
+            <div class="d-flex align-items-center gap-2">
+                <i class="bi bi-broadcast text-info"></i>
+                <span class="text-secondary small">MQTT: HiveMQ Cloud</span>
+            </div>
+            <div class="d-flex align-items-center gap-2">
+                <i class="bi bi-pin-map text-info"></i>
+                <span class="text-secondary small">Topic: iot/sensor/gas</span>
+            </div>
+            <div class="d-flex align-items-center gap-2">
+                <i class="bi bi-volume-up text-info" id="soundIcon"></i>
+                <button class="btn btn-sm btn-outline-secondary" id="toggleSoundBtn">Sound: ON</button>
+            </div>
+        </div>
+
+        <!-- Main Dashboard Grid -->
+        <div class="row g-4">
+            <!-- Chart Card -->
+            <div class="col-lg-8">
+                <div class="card h-100">
+                    <div class="card-header bg-transparent border-0 d-flex align-items-center gap-2">
+                        <div class="rounded-3 bg-info bg-opacity-10 p-2">
+                            <i class="bi bi-graph-up text-info fs-5"></i>
+                        </div>
+                        <h5 class="mb-0">Gas Concentration Over Time</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="chart-container">
+                            <canvas id="gasChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Current Value & Stats Card -->
+            <div class="col-lg-4">
+                <div class="card h-100">
+                    <div class="card-header bg-transparent border-0 d-flex align-items-center gap-2">
+                        <div class="rounded-3 bg-info bg-opacity-10 p-2">
+                            <i class="bi bi-speedometer2 text-info fs-5"></i>
+                        </div>
+                        <h5 class="mb-0">Current Reading</h5>
+                    </div>
+                    <div class="card-body text-center">
+                        <!-- Main Value Display -->
+                        <div class="my-4">
+                            <span class="value-display text-success" id="currentValue">---</span>
+                            <span class="fs-4 text-secondary">ppm</span>
+                            <p class="text-secondary mt-2 mb-0">Gas Concentration</p>
+                        </div>
+
+                        <!-- Alert Banner -->
+                        <div class="alert alert-danger alert-banner d-none" id="alertBanner">
+                            <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                            <strong>HIGH GAS LEVEL DETECTED!</strong>
+                        </div>
+
+                        <!-- Stats Grid -->
+                        <div class="row g-2 mt-3">
+                            <div class="col-6">
+                                <div class="stat-card">
+                                    <div class="stat-value text-info" id="minValue">---</div>
+                                    <div class="text-secondary small">Min (ppm)</div>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <div class="stat-card">
+                                    <div class="stat-value text-info" id="maxValue">---</div>
+                                    <div class="text-secondary small">Max (ppm)</div>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <div class="stat-card">
+                                    <div class="stat-value text-info" id="avgValue">---</div>
+                                    <div class="text-secondary small">Avg (ppm)</div>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <div class="stat-card">
+                                    <div class="stat-value text-info" id="readingCount">0</div>
+                                    <div class="text-secondary small">Readings</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Threshold Info -->
+                        <div class="mt-3 small">
+                            <div class="d-flex align-items-center gap-2 mb-1">
+                                <span class="badge bg-success">🟢 ≤500</span>
+                                <span class="text-secondary">Safe</span>
+                            </div>
+                            <div class="d-flex align-items-center gap-2 mb-1">
+                                <span class="badge bg-warning text-dark">🟡 501-900</span>
+                                <span class="text-secondary">Light Warning</span>
+                            </div>
+                            <div class="d-flex align-items-center gap-2 mb-1">
+                                <span class="badge bg-danger">🟠 901-2000</span>
+                                <span class="text-secondary">Dangerous</span>
+                            </div>
+                            <div class="d-flex align-items-center gap-2">
+                                <span class="badge bg-dark border border-danger">🔴 >2000</span>
+                                <span class="text-secondary">Extremely Dangerous</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Alert History Table -->
+        <div class="row mt-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header bg-transparent border-0 d-flex align-items-center justify-content-between">
+                        <div class="d-flex align-items-center gap-2">
+                            <div class="rounded-3 bg-danger bg-opacity-10 p-2">
+                                <i class="bi bi-bell-fill text-danger fs-5"></i>
+                            </div>
+                            <h5 class="mb-0">Alert History</h5>
+                        </div>
+                        <button class="btn btn-sm btn-outline-info" id="refreshAlertsBtn">
+                            <i class="bi bi-arrow-clockwise me-1"></i>Refresh
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <div class="alert-table-container">
+                            <table class="table table-dark-custom table-hover mb-0">
+                                <thead>
+                                    <tr>
+                                        <th><i class="bi bi-clock me-1"></i>Time</th>
+                                        <th><i class="bi bi-cpu me-1"></i>Device</th>
+                                        <th><i class="bi bi-bar-chart me-1"></i>Level</th>
+                                        <th><i class="bi bi-chat-left-text me-1"></i>Message</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="alertTableBody">
+                                    <tr>
+                                        <td colspan="4" class="text-center text-secondary py-4">
+                                            <i class="bi bi-inbox fs-3 d-block mb-2"></i>
+                                            No alerts recorded
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <footer class="text-center mt-4 pt-4 border-top border-secondary border-opacity-25">
+            <p class="text-secondary small mb-1">
+                IoT Gas Monitoring System v2.0.0 | HiveMQ Cloud + Supabase
+            </p>
+            <p class="text-secondary small">
+                Ready for ESP32 integration via MQTT
+            </p>
+        </footer>
+    </div>
+
+    <!-- Bootstrap 5 JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+
+    <script>
+        // =====================================================================
+        // Configuration
+        // =====================================================================
+        const CONFIG = {
+            // Auto-detect URL based on current location (works for localhost and Render)
+            get WS_URL() {
+                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                return `${protocol}//${window.location.host}/ws/gas`;
+            },
+            get API_BASE() {
+                return `${window.location.protocol}//${window.location.host}`;
+            },
+            // Vietnamese safety thresholds
+            THRESHOLD_WARNING: 500,   // Level 2: Cảnh báo nhẹ
+            THRESHOLD_DANGER: 900,    // Level 3: Nguy hiểm (Trigger siren)
+            THRESHOLD_CRITICAL: 2000, // Level 4: Cực kỳ nguy hiểm
+            MAX_DATA_POINTS: 30,
+            RECONNECT_DELAY: 3000
+        };
+
+        // =====================================================================
+        // State Management
+        // =====================================================================
+        const state = {
+            readings: [],
+            labels: [],
+            ws: null,
+            chart: null,
+            soundEnabled: true,
+            audioContext: null,
+            stats: {
+                min: Infinity,
+                max: -Infinity,
+                sum: 0,
+                count: 0
+            }
+        };
+
+        // =====================================================================
+        // DOM Elements
+        // =====================================================================
+        const elements = {
+            wsStatusDot: document.getElementById('wsStatusDot'),
+            wsStatusText: document.getElementById('wsStatusText'),
+            currentValue: document.getElementById('currentValue'),
+            alertBanner: document.getElementById('alertBanner'),
+            minValue: document.getElementById('minValue'),
+            maxValue: document.getElementById('maxValue'),
+            avgValue: document.getElementById('avgValue'),
+            readingCount: document.getElementById('readingCount'),
+            alertTableBody: document.getElementById('alertTableBody'),
+            toggleSoundBtn: document.getElementById('toggleSoundBtn'),
+            soundIcon: document.getElementById('soundIcon'),
+            refreshAlertsBtn: document.getElementById('refreshAlertsBtn')
+        };
+
+        // =====================================================================
+        // Sound System (Web Audio API)
+        // =====================================================================
+        function initAudio() {
+            try {
+                state.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            } catch (e) {
+                console.warn('[AUDIO] Web Audio API not supported');
+            }
+        }
+
+        function playAlertSound(isCritical = false) {
+            if (!state.soundEnabled || !state.audioContext) return;
+
+            try {
+                // Resume audio context if suspended (browser autoplay policy)
+                if (state.audioContext.state === 'suspended') {
+                    state.audioContext.resume();
+                }
+
+                const baseFreq = isCritical ? 1200 : 880;
+                const beepCount = isCritical ? 4 : 2;
+                const beepDelay = isCritical ? 150 : 300;
+
+                for (let i = 0; i < beepCount; i++) {
+                    setTimeout(() => {
+                        const oscillator = state.audioContext.createOscillator();
+                        const gainNode = state.audioContext.createGain();
+
+                        oscillator.connect(gainNode);
+                        gainNode.connect(state.audioContext.destination);
+
+                        oscillator.type = isCritical ? 'square' : 'sine';
+                        oscillator.frequency.setValueAtTime(baseFreq + (i * 100), state.audioContext.currentTime);
+
+                        gainNode.gain.setValueAtTime(isCritical ? 0.4 : 0.3, state.audioContext.currentTime);
+                        gainNode.gain.exponentialRampToValueAtTime(0.01, state.audioContext.currentTime + 0.3);
+
+                        oscillator.start(state.audioContext.currentTime);
+                        oscillator.stop(state.audioContext.currentTime + 0.3);
+                    }, i * beepDelay);
+                }
+            } catch (e) {
+                console.warn('[AUDIO] Failed to play sound:', e);
+            }
+        }
+
+        function toggleSound() {
+            state.soundEnabled = !state.soundEnabled;
+            elements.toggleSoundBtn.textContent = `Sound: ${state.soundEnabled ? 'ON' : 'OFF'}`;
+            elements.soundIcon.className = state.soundEnabled ? 'bi bi-volume-up text-info' : 'bi bi-volume-mute text-secondary';
+
+            // Initialize audio on first interaction (browser requirement)
+            if (state.soundEnabled && !state.audioContext) {
+                initAudio();
+            }
+        }
+
+        // =====================================================================
+        // Chart Setup
+        // =====================================================================
+        function initChart() {
+            const ctx = document.getElementById('gasChart').getContext('2d');
+
+            // Create gradient
+            const gradient = ctx.createLinearGradient(0, 0, 0, 350);
+            gradient.addColorStop(0, 'rgba(0, 212, 255, 0.3)');
+            gradient.addColorStop(1, 'rgba(0, 212, 255, 0.0)');
+
+            state.chart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: state.labels,
+                    datasets: [{
+                        label: 'Gas (ppm)',
+                        data: state.readings,
+                        borderColor: '#00d4ff',
+                        backgroundColor: gradient,
+                        borderWidth: 2,
+                        fill: true,
+                        tension: 0.4,
+                        pointRadius: 3,
+                        pointBackgroundColor: '#00d4ff',
+                        pointBorderColor: '#fff',
+                        pointBorderWidth: 1,
+                        pointHoverRadius: 6
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        intersect: false,
+                        mode: 'index'
+                    },
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        tooltip: {
+                            backgroundColor: 'rgba(26, 26, 46, 0.95)',
+                            titleColor: '#fff',
+                            bodyColor: '#00d4ff',
+                            borderColor: 'rgba(0, 212, 255, 0.3)',
+                            borderWidth: 1,
+                            padding: 12,
+                            displayColors: false,
+                            callbacks: {
+                                label: (context) => `${context.parsed.y} ppm`
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            grid: {
+                                color: 'rgba(255, 255, 255, 0.05)',
+                                drawBorder: false
+                            },
+                            ticks: {
+                                color: '#8b8b9e',
+                                font: { size: 10 },
+                                maxRotation: 45
+                            }
+                        },
+                        y: {
+                            min: 0,
+                            max: 1000,
+                            grid: {
+                                color: 'rgba(255, 255, 255, 0.05)',
+                                drawBorder: false
+                            },
+                            ticks: {
+                                color: '#8b8b9e',
+                                font: { size: 10 },
+                                callback: (value) => value + ' ppm'
+                            }
+                        }
+                    },
+                    animation: {
+                        duration: 300
+                    }
+                }
+            });
+
+            // Add threshold line annotation
+            addThresholdLine();
+        }
+
+        function addThresholdLine() {
+            const originalDraw = state.chart.draw;
+            state.chart.draw = function () {
+                originalDraw.apply(this, arguments);
+
+                const ctx = this.ctx;
+                const yAxis = this.scales.y;
+                const xAxis = this.scales.x;
+
+                const yPos = yAxis.getPixelForValue(CONFIG.ALERT_THRESHOLD);
+
+                ctx.save();
+                ctx.beginPath();
+                ctx.setLineDash([5, 5]);
+                ctx.strokeStyle = 'rgba(255, 71, 87, 0.7)';
+                ctx.lineWidth = 2;
+                ctx.moveTo(xAxis.left, yPos);
+                ctx.lineTo(xAxis.right, yPos);
+                ctx.stroke();
+
+                ctx.fillStyle = 'rgba(255, 71, 87, 0.9)';
+                ctx.font = '11px Inter';
+                ctx.fillText('Threshold: 600 ppm', xAxis.right - 110, yPos - 5);
+                ctx.restore();
+            };
+        }
+
+        // =====================================================================
+        // API Functions
+        // =====================================================================
+        async function loadHistory() {
+            try {
+                const response = await fetch(`${CONFIG.API_BASE}/api/history`);
+                const result = await response.json();
+
+                if (result.data && result.data.length > 0) {
+                    result.data.forEach(reading => {
+                        const timestamp = new Date(reading.created_at);
+                        const timeLabel = timestamp.toLocaleTimeString('en-US', {
+                            hour12: false,
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            second: '2-digit'
+                        });
+
+                        state.readings.push(reading.value);
+                        state.labels.push(timeLabel);
+
+                        // Update stats
+                        state.stats.count++;
+                        state.stats.sum += reading.value;
+                        state.stats.min = Math.min(state.stats.min, reading.value);
+                        state.stats.max = Math.max(state.stats.max, reading.value);
+                    });
+
+                    // Trim to max data points
+                    while (state.readings.length > CONFIG.MAX_DATA_POINTS) {
+                        state.readings.shift();
+                        state.labels.shift();
+                    }
+
+                    // Update UI
+                    if (state.readings.length > 0) {
+                        updateDisplay(state.readings[state.readings.length - 1]);
+                    }
+                    updateStats();
+                    state.chart.update('none');
+
+                    console.log(`[API] Loaded ${result.data.length} historical readings`);
+                }
+            } catch (e) {
+                console.error('[API] Failed to load history:', e);
+            }
+        }
+
+        async function loadAlerts() {
+            try {
+                const response = await fetch(`${CONFIG.API_BASE}/api/alerts`);
+                const result = await response.json();
+
+                if (result.data && result.data.length > 0) {
+                    elements.alertTableBody.innerHTML = result.data.map(alert => {
+                        const timestamp = new Date(alert.created_at);
+                        const timeStr = timestamp.toLocaleString('en-US', {
+                            hour12: false,
+                            month: 'short',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            second: '2-digit'
+                        });
+                        return `
+                            <tr>
+                                <td class="small">${timeStr}</td>
+                                <td><span class="badge bg-secondary">${alert.device_id}</span></td>
+                                <td><span class="badge bg-danger">${alert.level} ppm</span></td>
+                                <td class="small text-warning">${alert.message}</td>
+                            </tr>
+                        `;
+                    }).join('');
+                    console.log(`[API] Loaded ${result.data.length} alerts`);
+                } else {
+                    elements.alertTableBody.innerHTML = `
+                        <tr>
+                            <td colspan="4" class="text-center text-secondary py-4">
+                                <i class="bi bi-inbox fs-3 d-block mb-2"></i>
+                                No alerts recorded
+                            </td>
+                        </tr>
+                    `;
+                }
+            } catch (e) {
+                console.error('[API] Failed to load alerts:', e);
+            }
+        }
+
+        // =====================================================================
+        // WebSocket Connection
+        // =====================================================================
+        function connectWebSocket() {
+            updateConnectionStatus('connecting');
+
+            state.ws = new WebSocket(CONFIG.WS_URL);
+
+            state.ws.onopen = () => {
+                console.log('[WS] Connected');
+                updateConnectionStatus('connected');
+            };
+
+            state.ws.onclose = () => {
+                console.log('[WS] Disconnected');
+                updateConnectionStatus('disconnected');
+
+                // Auto-reconnect
+                setTimeout(connectWebSocket, CONFIG.RECONNECT_DELAY);
+            };
+
+            state.ws.onerror = (error) => {
+                console.error('[WS] Error:', error);
+            };
+
+            state.ws.onmessage = (event) => {
+                handleWebSocketMessage(event.data);
+            };
+        }
+
+        function handleWebSocketMessage(rawMessage) {
+            try {
+                let data;
+                let isAlert = false;
+
+                // Check for ALERT: prefix
+                if (rawMessage.startsWith('ALERT:')) {
+                    isAlert = true;
+                    data = JSON.parse(rawMessage.substring(6));
+                } else {
+                    data = JSON.parse(rawMessage);
+                }
+
+                handleNewReading(data);
+
+                if (isAlert) {
+                    handleAlert(data);
+                }
+            } catch (error) {
+                console.error('[WS] Invalid message:', error);
+            }
+        }
+
+        function handleAlert(data) {
+            const level = data.level || 'DANGER';
+
+            // Flash screen red for Level 3+ 
+            if (level === 'DANGER' || level === 'CRITICAL') {
+                document.body.classList.add('alert-active');
+
+                // Play alert sound (faster for critical)
+                playAlertSound(level === 'CRITICAL');
+
+                // Remove flash after 3 seconds
+                setTimeout(() => {
+                    document.body.classList.remove('alert-active');
+                }, level === 'CRITICAL' ? 5000 : 3000);
+            }
+
+            // Reload alert history
+            loadAlerts();
+        }
+
+        function updateConnectionStatus(status) {
+            const dot = elements.wsStatusDot;
+            const text = elements.wsStatusText;
+
+            dot.className = 'status-dot ' + status;
+
+            switch (status) {
+                case 'connected':
+                    text.textContent = 'Connected';
+                    break;
+                case 'connecting':
+                    text.textContent = 'Connecting...';
+                    break;
+                case 'disconnected':
+                    text.textContent = 'Disconnected - Reconnecting...';
+                    break;
+            }
+        }
+
+        // =====================================================================
+        // Data Handling
+        // =====================================================================
+        function handleNewReading(data) {
+            const value = data.value;
+            const timestamp = new Date(data.timestamp);
+            const timeLabel = timestamp.toLocaleTimeString('en-US', {
+                hour12: false,
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            });
+
+            // Update arrays
+            state.readings.push(value);
+            state.labels.push(timeLabel);
+
+            // Keep only last N data points
+            if (state.readings.length > CONFIG.MAX_DATA_POINTS) {
+                state.readings.shift();
+                state.labels.shift();
+            }
+
+            // Update stats
+            state.stats.count++;
+            state.stats.sum += value;
+            state.stats.min = Math.min(state.stats.min, value);
+            state.stats.max = Math.max(state.stats.max, value);
+
+            // Update UI
+            updateDisplay(value);
+            updateStats();
+            checkAlert(value);
+
+            // Update chart
+            state.chart.update('none');
+        }
+
+        function updateDisplay(value) {
+            elements.currentValue.textContent = value;
+
+            // Remove all color classes
+            elements.currentValue.classList.remove('text-success', 'text-warning', 'text-danger');
+
+            // Apply color based on Vietnamese safety levels
+            if (value > CONFIG.THRESHOLD_CRITICAL) {
+                // Level 4: Cực kỳ nguy hiểm (Extremely Dangerous)
+                elements.currentValue.classList.add('text-danger');
+                elements.currentValue.style.animation = 'dangerBlink 0.3s ease-in-out infinite';
+            } else if (value > CONFIG.THRESHOLD_DANGER) {
+                // Level 3: Nguy hiểm (Dangerous)
+                elements.currentValue.classList.add('text-danger');
+                elements.currentValue.style.animation = 'dangerBlink 0.5s ease-in-out infinite';
+            } else if (value > CONFIG.THRESHOLD_WARNING) {
+                // Level 2: Cảnh báo nhẹ (Warning)
+                elements.currentValue.classList.add('text-warning');
+                elements.currentValue.style.animation = '';
+            } else {
+                // Level 1: An toàn (Safe)
+                elements.currentValue.classList.add('text-success');
+                elements.currentValue.style.animation = '';
+            }
+        }
+
+        function updateStats() {
+            const { min, max, sum, count } = state.stats;
+
+            elements.minValue.textContent = min === Infinity ? '---' : min;
+            elements.maxValue.textContent = max === -Infinity ? '---' : max;
+            elements.avgValue.textContent = count > 0 ? Math.round(sum / count) : '---';
+            elements.readingCount.textContent = count;
+        }
+
+        function checkAlert(value) {
+            // Only show alert banner and flash for Level 3+ (Danger)
+            const isDanger = value > CONFIG.THRESHOLD_DANGER;
+
+            if (isDanger) {
+                elements.alertBanner.classList.remove('d-none');
+
+                // Update alert message based on level
+                const alertText = elements.alertBanner.querySelector('strong');
+                if (value > CONFIG.THRESHOLD_CRITICAL) {
+                    alertText.textContent = 'EXTREMELY DANGEROUS! High flammable gas concentration!';
+                } else {
+                    alertText.textContent = 'DANGER! Gas leak detected!';
+                }
+            } else {
+                elements.alertBanner.classList.add('d-none');
+            }
+        }
+
+        // =====================================================================
+        // Event Listeners
+        // =====================================================================
+        elements.toggleSoundBtn.addEventListener('click', toggleSound);
+        elements.refreshAlertsBtn.addEventListener('click', loadAlerts);
+
+        // =====================================================================
+        // Initialization
+        // =====================================================================
+        document.addEventListener('DOMContentLoaded', async () => {
+            initAudio();
+            initChart();
+
+            // Load historical data first
+            await loadHistory();
+            await loadAlerts();
+
+            // Then connect WebSocket
+            connectWebSocket();
+        });
+    </script>
+</body>
+
+</html>
